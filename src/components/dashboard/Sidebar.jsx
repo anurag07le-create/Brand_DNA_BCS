@@ -5,7 +5,7 @@ import logo from '../../assets/pucho_logo_sidebar_new.png';
 import userAvatar from '../../assets/ToyFaces_Tansparent_BG_30.png';
 import { getMascotUrl } from '../../utils/mascots';
 
-import { Dna, Megaphone, Palette, FolderOpen, Activity, Plug, BookOpen, Wrench, Store, LogOut, Users, LineChart, FileText, Mic } from 'lucide-react';
+import { Dna, Megaphone, Palette, FolderOpen, Activity, Plug, BookOpen, Wrench, Store, LogOut, Users, LineChart, FileText, Mic, Target } from 'lucide-react';
 import { useBrands } from '../../context/BrandContext';
 
 const Sidebar = ({ isMobileOpen }) => {
@@ -26,6 +26,8 @@ const Sidebar = ({ isMobileOpen }) => {
         { name: 'Market Intelligence', icon: LineChart, path: '/admin/market-intelligence' },
         { name: 'Market Intelligence reports', icon: FileText, path: '/admin/market-intelligence-reports' },
         { name: 'Audio Transcription Summary', icon: Mic, path: '/admin/audio-transcription' },
+        { name: 'Competitor Analysis', icon: Target, path: '/admin/competitor-analysis' },
+        { name: 'MOM Summary', icon: BookOpen, path: '/admin/mom-summary' },
         { name: 'Generate Creatives', icon: Palette, path: '/admin/chat' },
         { name: 'User Management', icon: Users, path: '/admin/users', adminOnly: true },
         { name: 'Activity Logs', icon: Activity, path: '/admin/activity-logs', adminOnly: true },
@@ -133,7 +135,7 @@ const Sidebar = ({ isMobileOpen }) => {
 
                 <div className="flex items-center gap-3 p-2 rounded-2xl hover:bg-gray-50 cursor-pointer transition-colors">
                     <img
-                        src={user?.avatar_path ? getMascotUrl(user.avatar_path) : userAvatar}
+                        src={(user?.avatar_path && getMascotUrl(user.avatar_path)) || userAvatar}
                         alt="User"
                         className="w-8 h-10 object-cover"
                     />
