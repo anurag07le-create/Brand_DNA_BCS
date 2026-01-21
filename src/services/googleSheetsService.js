@@ -706,3 +706,269 @@ export const fetchBrandCreatives = async (brandUrl, config = {}) => {
         return [];
     }
 };
+
+export const fetchMarketIntelligenceReports = async (config = {}) => {
+    // New Sheet ID provided by user
+    // https://docs.google.com/spreadsheets/d/1trmuPKla4JjrNEJbj0_Ll2uXpbws0g2e7FhXa4rUdDU/edit?gid=454926026
+    const spreadsheetId = '1trmuPKla4JjrNEJbj0_Ll2uXpbws0g2e7FhXa4rUdDU';
+    const gid = '454926026';
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}&_t=${Date.now()}`;
+
+    console.log('📊 Fetching Market Intelligence Reports from:', url);
+
+    try {
+        const response = await fetch(url);
+        const csvText = await response.text();
+
+        return new Promise((resolve, reject) => {
+            Papa.parse(csvText, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    console.log('✅ Parsed', results.data.length, 'rows from new sheet');
+
+                    const reports = results.data.map(row => {
+                        // 1. Basic columns
+                        const reportLink = row['Report Link'];
+                        const brandNameFromCsv = row['Brand Name'];
+
+                        // 2. Parse embedded JSON from HTML column if it exists
+                        let details = {};
+                        const htmlContent = row['HTML'];
+
+                        if (htmlContent) {
+                            try {
+                                // Regex to extract the JSON content inside the script tag
+                                // <script id="client-form" type="application/json">{...}</script>
+                                const jsonMatch = htmlContent.match(/<script id="client-form" type="application\/json">([\s\S]*?)<\/script>/);
+
+                                if (jsonMatch && jsonMatch[1]) {
+                                    const rawJson = jsonMatch[1];
+                                    // The JSON might be double-escaped or have issues, but let's try direct parse first
+                                    const parsedData = JSON.parse(rawJson);
+
+                                    // The structure seems to be: { body: { ...details... } } or just { ...details... }
+                                    // Based on inspection, it looks like the root has body: { ... }
+
+                                    const body = parsedData.body || parsedData;
+
+                                    details = {
+                                        clientName: body.clientName,
+                                        brandProduct: body.brandProduct,
+                                        problemStatement: body.problemStatement,
+                                        targetConsumer: body.targetConsumer,
+                                        proposition: body.singleMindedProposition,
+                                        desiredAction: body.desiredAction,
+                                        tone: body.toneCommunication,
+                                        functionalReasons: body.functionalReasons,
+                                        emotionalReasons: body.emotionalReasons,
+                                        kpis: body.kpis,
+                                        dosDonts: body.dosDonots,
+                                        budget: body.budget,
+                                        otherInfo: body.otherInfo,
+                                        competition: body.complications // mapped 'complications' to competition based on content
+                                    };
+                                }
+                            } catch (e) {
+                                console.error('⚠️ Error parsing embedded JSON for row:', brandNameFromCsv, e);
+                            }
+                        }
+
+                        // Fallback: if JSON parsing failed but we have CSV columns? 
+                        // The new CSV ONLY has Trigger ID, Brand Name, Report Link, HTML.
+                        // So we rely heavily on the HTML parsing.
+
+                        return {
+                            ...details,
+                            // Ensure we have at least these if parsing failed
+                            brandProduct: details.brandProduct || brandNameFromCsv || 'Untitled Brand',
+                            reportLink: reportLink,
+                            htmlContent: htmlContent // Expose raw HTML for preview
+                        };
+                    }).filter(r => r.brandProduct);
+
+                    resolve(reports);
+                },
+                error: (error) => {
+                    console.error('❌ CSV Parse Error:', error);
+                    reject(error);
+                }
+            });
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching Market Intelligence Reports:', error);
+        return [];
+    }
+};
+
+export const fetchAudioTranscriptionSummaries = async (config = {}) => {
+    // Using same spreadsheet as Market Intelligence
+    const spreadsheetId = '1trmuPKla4JjrNEJbj0_Ll2uXpbws0g2e7FhXa4rUdDU';
+    const gid = '12631152'; // User provided GID
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}&_t=${Date.now()}`;
+
+    console.log('🎙️ Fetching Audio Transcription Summaries from:', url);
+
+    try {
+        const response = await fetch(url);
+        const csvText = await response.text();
+
+        return new Promise((resolve, reject) => {
+            Papa.parse(csvText, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    console.log('✅ Parsed', results.data.length, 'rows from Audio Summary sheet');
+
+                    const summaries = results.data.map(row => {
+                        return {
+                            triggerId: row['Trigger ID'],
+                            fileName: row['File Name'] || 'Untitled Audio',
+                            summary: row['Audio Transcription Summary'] || '',
+                            transcription: row['Audio Transcription'] || ''
+                        };
+                    }).filter(item => item.fileName && item.fileName !== 'Untitled Audio'); // Filter empty rows
+
+                    resolve(summaries);
+                },
+                error: (error) => {
+                    console.error('❌ CSV Parse Error:', error);
+                    reject(error);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('❌ Error fetching Audio Summaries:', error);
+        return [];
+    }
+};
+
+export const fetchCompetitorAnalysisReports = async () => {
+    try {
+        const SHEET_ID = '1trmuPKla4JjrNEJbj0_Ll2uXpbws0g2e7FhXa4rUdDU';
+        const GID = '2028255086';
+
+        // Use standard export endpoint which is often more reliable for raw CSV
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}&_t=${Date.now()}`;
+
+        console.log("Fetching Competitor Analysis Reports from:", url);
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const text = await response.text();
+        // console.log("First 100 chars:", text.substring(0, 100));
+
+        return new Promise((resolve, reject) => {
+            Papa.parse(text, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    const findKey = (row, target) => {
+                        if (!row) return null;
+                        return Object.keys(row).find(k =>
+                            k.toLowerCase().trim().includes(target.toLowerCase())
+                        );
+                    };
+
+                    console.log("Headers found:", results.meta.fields);
+
+                    const parsedData = results.data.map(row => {
+                        const companyKey = findKey(row, 'company') || findKey(row, 'name') || 'Company Name';
+                        const websiteKey = findKey(row, 'website') || findKey(row, 'url') || 'Brand Website';
+                        const htmlKey = findKey(row, 'html') || 'HTML';
+
+                        return {
+                            companyName: row[companyKey] || row['Company Name'] || 'Unknown Company',
+                            websiteUrl: row[websiteKey] || row['Brand Website'] || '#',
+                            htmlContent: row[htmlKey] || row['HTML'] || '<p>No analysis available.</p>'
+                        };
+                    }).filter(item =>
+                        item.companyName &&
+                        item.companyName !== 'Unknown Company' &&
+                        item.companyName !== 'Company Name' // Header in data check
+                    );
+
+                    console.log(`Parsed ${parsedData.length} reports`);
+                    resolve(parsedData);
+                },
+                error: (error) => {
+                    reject(error);
+                }
+            });
+        });
+    } catch (error) {
+        console.error("Error fetching competitor analysis reports:", error);
+        return [];
+    }
+};
+
+export const fetchMomSummaries = async () => {
+    try {
+        const SHEET_ID = '1trmuPKla4JjrNEJbj0_Ll2uXpbws0g2e7FhXa4rUdDU';
+        const GID = '1724442704';
+
+        // Use standard export endpoint
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}&_t=${Date.now()}`;
+
+        console.log("Fetching MOM Summaries from:", url);
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const text = await response.text();
+
+        return new Promise((resolve, reject) => {
+            Papa.parse(text, {
+                header: true, // Try with headers first
+                skipEmptyLines: true,
+                complete: (results) => {
+                    console.log("MOM Raw headers:", results.meta.fields);
+
+                    // Helper to find key case-insensitive
+                    const findKey = (row, target) => {
+                        if (!row) return null;
+                        return Object.keys(row).find(k =>
+                            k.toLowerCase().trim().includes(target.toLowerCase())
+                        );
+                    };
+
+                    const parsedData = results.data.map((row, index) => {
+                        // Try to find structured columns
+                        let title = row[findKey(row, 'Title') || findKey(row, 'Meeting')];
+                        let date = row[findKey(row, 'Date')];
+                        let time = row[findKey(row, 'Time')];
+                        let summary = row[findKey(row, 'Summary') || findKey(row, 'Notes') || findKey(row, 'Content')];
+
+                        // Fallback logic could be added here if needed
+
+                        // If we have minimal data, return it
+                        if (title || date || summary) {
+                            return {
+                                id: index,
+                                title: title || 'Untitled Meeting',
+                                date: date || 'Unknown Date',
+                                time: time || '',
+                                summaryContent: summary || ''
+                            };
+                        }
+                        return null;
+                    }).filter(item => item !== null);
+
+                    resolve(parsedData);
+                },
+                error: (error) => {
+                    reject(error);
+                }
+            });
+        });
+    } catch (error) {
+        console.error("Error fetching MOM summaries:", error);
+        return [];
+    }
+};
