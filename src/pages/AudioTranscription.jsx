@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, FileText, Loader2, X, FileAudio } from 'lucide-react';
+import { Mic, FileText, Loader2, X, FileAudio, Mail } from 'lucide-react';
 import { fetchAudioTranscriptionSummaries } from '../services/googleSheetsService';
 
 const AudioTranscription = () => {
     const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
     const [audioFile, setAudioFile] = useState(null);
     const [audioLanguage, setAudioLanguage] = useState('');
+    const [emailId, setEmailId] = useState('');
     const [isSubmittingAudio, setIsSubmittingAudio] = useState(false);
 
     const [summaries, setSummaries] = useState([]);
@@ -23,6 +24,7 @@ const AudioTranscription = () => {
         setPreviewModal({ ...previewModal, isOpen: false });
     };
 
+    // Initial load
     useEffect(() => {
         const loadSummaries = async () => {
             try {
@@ -38,6 +40,61 @@ const AudioTranscription = () => {
 
         loadSummaries();
     }, []);
+
+    const [isPolling, setIsPolling] = useState(false);
+    const [pollingFileName, setPollingFileName] = useState('');
+    const [statusMessage, setStatusMessage] = useState('Your audio is being transcribed...');
+
+    // Status message rotation
+    useEffect(() => {
+        if (!isPolling) return;
+
+        const messages = [
+            "Your audio is being transcribed...",
+            "Exploring summary...",
+            "Analyzing sentiment...",
+            "Formulating key points...",
+            "Finalizing report..."
+        ];
+
+        let msgIndex = 0;
+        const msgInterval = setInterval(() => {
+            msgIndex = (msgIndex + 1) % messages.length;
+            setStatusMessage(messages[msgIndex]);
+        }, 3000); // Change message every 3s
+
+        return () => clearInterval(msgInterval);
+    }, [isPolling]);
+
+    // Polling logic
+    useEffect(() => {
+        if (!isPolling || !pollingFileName) return;
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const data = await fetchAudioTranscriptionSummaries();
+                // Check if our file exists in the new data
+                const found = data.find(item => item.fileName === pollingFileName);
+
+                if (found) {
+                    setSummaries(data);
+                    setIsPolling(false);
+                    setPollingFileName('');
+                    // Optional: Show success toast/alert that it's ready, or just let it appear
+                } else {
+                    // Update summaries anyway so we see others appearing too? 
+                    // Or primarily wait for ours. Let's just update summaries to keep list fresh.
+                    // But if we update summaries every 2s, it might jitter. 
+                    // Better to only update if we find ours OR if efficient. 
+                    // For now, let's just check for ours.
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+            }
+        }, 2000); // Poll every 2 seconds
+
+        return () => clearInterval(pollInterval);
+    }, [isPolling, pollingFileName]);
 
     const handleAudioSubmit = async (e) => {
         e.preventDefault();
@@ -66,6 +123,7 @@ const AudioTranscription = () => {
         formData.append('language', audioLanguage);
         formData.append('fileName', fileName);
         formData.append('trigger_id', triggerId);
+        formData.append('emailId', emailId);
 
         try {
             const response = await fetch('https://studio.pucho.ai/api/v1/webhooks/3wJ7qH0E06qpIsuoCaSJ0', {
@@ -74,10 +132,16 @@ const AudioTranscription = () => {
             });
 
             if (response.ok) {
-                alert("Audio sent for transcription successfully!");
+                // Modified: No alert, start polling instead
                 setIsAudioModalOpen(false);
                 setAudioFile(null);
                 setAudioLanguage('');
+                setEmailId('');
+
+                // Start polling
+                setPollingFileName(fileName);
+                setIsPolling(true);
+                setStatusMessage("Your audio is being transcribed...");
             } else {
                 alert("Failed to send audio. Please try again.");
                 console.error("Webhook error:", await response.text());
@@ -94,10 +158,21 @@ const AudioTranscription = () => {
         <div className="min-h-screen bg-[#fafafa] py-6 px-4 sm:px-6">
             <div className="max-w-4xl mx-auto">
                 {/* Header Action */}
-                <div className="flex justify-end mb-6">
+                <div className="flex justify-end mb-6 gap-4 items-center">
+                    {/* Polling Indicator */}
+                    {isPolling && (
+                        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-indigo-100 animate-in fade-in slide-in-from-top-4 duration-500">
+                            <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                            <span className="text-sm font-medium text-indigo-900 min-w-[200px]">
+                                {statusMessage}
+                            </span>
+                        </div>
+                    )}
+
                     <button
                         onClick={() => setIsAudioModalOpen(true)}
-                        className="inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-pink-600 rounded-xl hover:from-red-700 hover:to-pink-700 transition-all shadow-md hover:shadow-lg ring-offset-2 focus:ring-2 ring-red-500"
+                        disabled={isPolling}
+                        className="inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-pink-600 rounded-xl hover:from-red-700 hover:to-pink-700 transition-all shadow-md hover:shadow-lg ring-offset-2 focus:ring-2 ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Mic className="w-4 h-4 mr-2" />
                         Transcribe Audio
@@ -222,11 +297,27 @@ const AudioTranscription = () => {
                                     <input
                                         type="text"
                                         required
-                                        placeholder="e.g. English, Hindi, Spanish"
+                                        placeholder="e.g. English, Hindi, Gujarati, Marathi"
                                         value={audioLanguage}
                                         onChange={(e) => setAudioLanguage(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all placeholder:text-gray-400"
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email ID to send report</label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                            <Mail className="w-5 h-5" />
+                                        </div>
+                                        <input
+                                            type="email"
+                                            value={emailId}
+                                            onChange={(e) => setEmailId(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all placeholder:text-gray-400"
+                                            placeholder="e.g. your@email.com"
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className="pt-2">

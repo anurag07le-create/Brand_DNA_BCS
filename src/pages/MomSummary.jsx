@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ClipboardList, Plus, X, Loader2, FileText, Send, Calendar, Clock, Eye } from 'lucide-react';
+import { ClipboardList, Plus, X, Loader2, FileText, Send, Calendar, Clock, Eye, Mail } from 'lucide-react';
 import { fetchMomSummaries } from '../services/googleSheetsService';
 
 const MomSummary = () => {
@@ -11,12 +11,80 @@ const MomSummary = () => {
     const [meetingDate, setMeetingDate] = useState('');
     const [meetingTime, setMeetingTime] = useState('');
     const [meetingNotes, setMeetingNotes] = useState('');
+    const [emailId, setEmailId] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Data State
     const [summaries, setSummaries] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [previewModal, setPreviewModal] = useState({ isOpen: false, title: '', content: '' });
+
+    const [isPolling, setIsPolling] = useState(false);
+    const [pollingTarget, setPollingTarget] = useState('');
+    const [statusMessage, setStatusMessage] = useState('Processing meeting notes...');
+
+    // Status message rotation
+    useEffect(() => {
+        if (!isPolling) return;
+
+        const messages = [
+            "Processing meeting notes...",
+            "Analyzing key decisions...",
+            "Drafting summary...",
+            "Extracting action items...",
+            "Finalizing Minutes of Meeting..."
+        ];
+
+        let msgIndex = 0;
+        const msgInterval = setInterval(() => {
+            msgIndex = (msgIndex + 1) % messages.length;
+            setStatusMessage(messages[msgIndex]);
+        }, 3000);
+
+        return () => clearInterval(msgInterval);
+    }, [isPolling]);
+
+    // Polling logic
+    useEffect(() => {
+        if (!isPolling || !pollingTarget) return;
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const data = await fetchMomSummaries();
+                // Check if our meeting exists in the new data
+                const found = data.find(item =>
+                    item.title.toLowerCase().trim() === pollingTarget.toLowerCase().trim()
+                );
+
+                if (found) {
+                    setSummaries(data);
+                    setIsPolling(false);
+                    setPollingTarget('');
+                }
+            } catch (error) {
+                console.error("Polling error:", error);
+            }
+        }, 2000);
+
+        return () => clearInterval(pollInterval);
+    }, [isPolling, pollingTarget]);
+
+    // Scroll Lock Hook Logic
+    useEffect(() => {
+        if (isModalOpen || previewModal.isOpen) {
+            const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+            document.body.style.overflow = 'hidden';
+            document.body.style.paddingRight = `${scrollbarWidth}px`;
+        } else {
+            document.body.style.overflow = 'unset';
+            document.body.style.paddingRight = '0px';
+        }
+
+        return () => {
+            document.body.style.overflow = 'unset';
+            document.body.style.paddingRight = '0px';
+        };
+    }, [isModalOpen, previewModal.isOpen]);
 
     // Fetch Data on Mount
     useEffect(() => {
@@ -38,6 +106,7 @@ const MomSummary = () => {
         formData.append('meeting_date', meetingDate);
         formData.append('meeting_time', meetingTime);
         formData.append('meeting_notes', meetingNotes);
+        formData.append('emailId', emailId);
 
         try {
             const response = await fetch('https://studio.pucho.ai/api/v1/webhooks/KiYaHcJAltduXjM7tdYYH', {
@@ -46,13 +115,18 @@ const MomSummary = () => {
             });
 
             if (response.ok) {
-                alert("Meeting notes submitted successfully!");
+                // Modified: Start polling instead of alert
                 setIsModalOpen(false);
                 setMeetingTitle('');
                 setMeetingDate('');
                 setMeetingTime('');
                 setMeetingNotes('');
-                // Optionally reload data here if the webhook updates the sheet immediately
+                setEmailId('');
+
+                // Start polling
+                setPollingTarget(meetingTitle);
+                setIsPolling(true);
+                setStatusMessage("Processing meeting notes...");
             } else {
                 const errorText = await response.text();
                 console.error("Webhook error:", errorText);
@@ -79,13 +153,27 @@ const MomSummary = () => {
             <div className="max-w-7xl mx-auto">
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-2xl font-bold text-gray-900">MOM Summary</h1>
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-[#6366f1] rounded-xl hover:bg-[#5558dd] transition-all shadow-md hover:shadow-lg ring-offset-2 focus:ring-2 ring-indigo-500"
-                    >
-                        <Plus className="w-5 h-5 mr-1.5" />
-                        New Summary
-                    </button>
+
+                    <div className="flex items-center gap-4">
+                        {/* Polling Indicator */}
+                        {isPolling && (
+                            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-indigo-100 animate-in fade-in slide-in-from-top-4 duration-500">
+                                <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                                <span className="text-sm font-medium text-indigo-900 min-w-[200px]">
+                                    {statusMessage}
+                                </span>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            disabled={isPolling}
+                            className="inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-[#6366f1] rounded-xl hover:bg-[#5558dd] transition-all shadow-md hover:shadow-lg ring-offset-2 focus:ring-2 ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Plus className="w-5 h-5 mr-1.5" />
+                            New Summary
+                        </button>
+                    </div>
                 </div>
 
                 {isLoading ? (
@@ -138,8 +226,12 @@ const MomSummary = () => {
                                     )}
 
                                     <div className="text-sm text-gray-600 line-clamp-3 mb-4">
-                                        {/* Display snippet of content if HTML, strip tags roughly for preview */}
-                                        {item.summaryContent.replace(/<[^>]*>?/gm, '').substring(0, 150)}...
+                                        {/* Display snippet of content: Strip style/script tags first, then other tags */}
+                                        {item.summaryContent
+                                            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                                            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                                            .replace(/<[^>]*>?/gm, '')
+                                            .substring(0, 150)}...
                                     </div>
                                 </div>
 
@@ -160,7 +252,7 @@ const MomSummary = () => {
 
             {/* Submission Modal */}
             {isModalOpen && createPortal(
-                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
                             <h3 className="text-lg font-bold text-gray-900">New Meeting Summary</h3>
@@ -231,6 +323,25 @@ const MomSummary = () => {
                                 </div>
                             </div>
 
+                            {/* Email ID */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    Email ID to send report
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                        <Mail className="w-4 h-4" />
+                                    </div>
+                                    <input
+                                        type="email"
+                                        value={emailId}
+                                        onChange={(e) => setEmailId(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#6366f1] focus:border-[#6366f1] outline-none transition-all placeholder:text-gray-400 text-sm"
+                                        placeholder="e.g. your@email.com"
+                                    />
+                                </div>
+                            </div>
+
                             <div className="pt-2">
                                 <button
                                     type="submit"
@@ -258,7 +369,7 @@ const MomSummary = () => {
 
             {/* Content Preview Modal */}
             {previewModal.isOpen && createPortal(
-                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
                             <h3 className="text-lg font-bold text-gray-900">{previewModal.title}</h3>
@@ -271,7 +382,7 @@ const MomSummary = () => {
                         </div>
                         <div className="p-6 overflow-y-auto custom-scrollbar">
                             <div
-                                className="prose prose-sm max-w-none text-gray-600 space-y-4 [&_b]:text-gray-900 [&_b]:font-semibold whitespace-pre-line"
+                                className="prose prose-sm max-w-none text-gray-600 space-y-4 [&_b]:text-gray-900 [&_b]:font-semibold"
                                 dangerouslySetInnerHTML={{ __html: previewModal.content?.trim() }}
                             />
                         </div>

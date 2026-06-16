@@ -44,7 +44,18 @@ const GenerateCreatives = () => {
     // Image selection modal state
     const [isImageModalOpen, setIsImageModalOpen] = useState(false);
     const [imageState, setImageState] = useState({ file: null, preview: null });
+    const [selectionMode, setSelectionMode] = useState('default');
     const fileInputRef = useRef(null);
+
+    // Refine Modal State
+    const [isRefineModalOpen, setIsRefineModalOpen] = useState(false);
+    const [isRefining, setIsRefining] = useState(false);
+    const [refineState, setRefineState] = useState({
+        image: null,
+        overlayImage: null,
+        prompt: '',
+        aspectRatio: '1:1'
+    });
 
     // Polling state
     const pollingInterval = useRef(null);
@@ -377,10 +388,110 @@ const GenerateCreatives = () => {
     };
 
     const handleBrandAssetSelect = (url) => {
+        if (selectionMode === 'refine-overlay') {
+            setRefineState(prev => ({ ...prev, overlayImage: url }));
+            setIsImageModalOpen(false);
+            setIsRefineModalOpen(true);
+            setSelectionMode('default');
+            return;
+        }
+
+        if (selectionMode === 'refine' || isRefineModalOpen) {
+            handleRefineOpen(url);
+            setIsImageModalOpen(false);
+            setSelectionMode('default');
+            return;
+        }
+
         setImageState({
             file: null,
             preview: url
         });
+    };
+
+    const handleRefineSubmit = async () => {
+        if (!refineState.image || isRefining) return;
+
+        setIsRefining(true);
+
+        try {
+            const webhookUrl = 'https://studio.pucho.ai/api/v1/webhooks/NvZX7JfssDTT7R9Q900k3';
+
+            let overlayImagePayload = refineState.overlayImage;
+            if (refineState.overlayImage && refineState.overlayImage.startsWith('blob:')) {
+                const response = await fetch(refineState.overlayImage);
+                const blob = await response.blob();
+                overlayImagePayload = await convertToBase64(blob);
+            }
+
+            const payload = {
+                request: 'edit',
+                input_line: refineState.prompt,
+                image_selected: refineState.image,
+                overlay_image: overlayImagePayload,
+                aspect_selected: refineState.aspectRatio,
+                brand_dna: brand,
+                spreadsheet_config: {
+                    spreadsheet_id: user?.spreadsheet_id || "",
+                    input_url_worksheet_id: user?.input_url_worksheet_id || "",
+                    campaign_ideas_id: user?.campaign_ideas_id || "",
+                    creatives_id: user?.creatives_id || "",
+                    animated_creatives_id: user?.animated_creatives_id || "",
+                    custom_creatives_id: user?.custom_creatives_id || ""
+                }
+            };
+
+            const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error('Failed to trigger refine generation');
+
+            setIsRefining(false);
+            setIsRefineModalOpen(false);
+
+            const tempId = Date.now();
+            setPendingGenerations(prev => [...prev, tempId]);
+
+            const startTime = Date.now();
+            const customInterval = setInterval(async () => {
+                const elapsed = Date.now() - startTime;
+                if (elapsed > MAX_POLL_TIME) {
+                    clearInterval(customInterval);
+                    customPollingIntervals.current.delete(customInterval);
+                    setPendingGenerations(prev => prev.filter(id => id !== tempId));
+                    return;
+                }
+                try {
+                    const result = await fetchCustomCreatives(refineState.prompt || "Edit", user);
+                    if (result && result.length > 0) {
+                        clearInterval(customInterval);
+                        customPollingIntervals.current.delete(customInterval);
+                        const newCreatives = result.map(item => ({ ...item, source: 'custom' }));
+                        setCreativeIdeas(prev => [...(prev || []), ...newCreatives]);
+                        setPendingGenerations(prev => prev.filter(id => id !== tempId));
+                    }
+                } catch (err) {
+                    console.error('Refine polling error:', err);
+                }
+            }, 5000);
+            customPollingIntervals.current.add(customInterval);
+
+        } catch (error) {
+            console.error("Refine submit error:", error);
+            setIsRefining(false);
+        }
+    };
+
+    const handleRefineOpen = (creativeUrl) => {
+        setRefineState({
+            image: creativeUrl,
+            prompt: '',
+            aspectRatio: selectedAspectRatio || '1:1'
+        });
+        setIsRefineModalOpen(true);
     };
 
     const clearImage = () => {
@@ -611,8 +722,22 @@ const GenerateCreatives = () => {
                         />
                     </div>
 
-                    {/* Actions Overlay */}
-                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                    {/* Actions Overlay - Visible on Hover */}
+                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        {/* Edit / Refine Button */}
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleRefineOpen(creative.image_url);
+                            }}
+                            className="bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-200 transition-colors"
+                            title="Refine / Edit"
+                        >
+                            <svg className="w-4 h-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                        </button>
+
                         {/* Default Animate Button (Visible if no video exists yet) */}
                         {!animatedCreatives[index] && (
                             <button
@@ -1134,7 +1259,10 @@ const GenerateCreatives = () => {
                                     <p className="text-xs text-gray-500 mt-1">Pick an existing image to use in your new creative.</p>
                                 </div>
                                 <button
-                                    onClick={() => setIsImageModalOpen(false)}
+                                    onClick={() => {
+                                        setIsImageModalOpen(false);
+                                        setSelectionMode('default');
+                                    }}
                                     className="text-gray-400 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-full transition-colors"
                                 >
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -1144,8 +1272,8 @@ const GenerateCreatives = () => {
                             {/* Modal Content */}
                             <div className="overflow-y-auto custom-scrollbar flex-1 -mr-2 pr-2">
                                 <div className="grid grid-cols-2 gap-6">
-                                    {/* 1. Upload Option */}
-                                    <div>
+                                    {/* 1. Upload Option - Full Width if no generated images, else column */}
+                                    <div className="col-span-2 md:col-span-1">
                                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 mt-3.5 text-center">Preview</h4>
                                         <div
                                             className="w-[270px] h-[270px] mx-auto rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/50 hover:bg-gray-50 transition-all flex flex-col items-center justify-center gap-3 group relative overflow-hidden"
@@ -1163,9 +1291,15 @@ const GenerateCreatives = () => {
                                                             clearImage();
                                                         }}
                                                         className="absolute top-2 right-2 bg-white text-gray-400 hover:text-red-500 rounded-full p-1 shadow-md hover:bg-gray-50 transition-all border border-gray-200 z-20"
+                                                        title="Remove Image"
                                                     >
                                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                                     </button>
+
+                                                    {/* Edit / Swap Button Overlay */}
+                                                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <span className="text-white text-xs font-bold drop-shadow-md">Click to Change</span>
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 <>
@@ -1192,7 +1326,34 @@ const GenerateCreatives = () => {
                                                 Upload Images
                                             </button>
                                             <button
-                                                onClick={() => setIsImageModalOpen(false)}
+                                                onClick={() => {
+                                                    // Handle Refine Overlay Selection (Asset/Upload)
+                                                    if (selectionMode === 'refine-overlay') {
+                                                        if (imageState.preview) {
+                                                            setRefineState(prev => ({ ...prev, overlayImage: imageState.preview }));
+                                                            setIsRefineModalOpen(true); // Re-open Refine Modal
+                                                        }
+                                                        setSelectionMode('default');
+                                                        setIsImageModalOpen(false);
+                                                        return;
+                                                    }
+
+                                                    // Handle Refine Mode (Initial Selection)
+                                                    if (selectionMode === 'refine') {
+                                                        if (imageState.preview) {
+                                                            handleRefineOpen(imageState.preview);
+                                                        }
+                                                        setSelectionMode('default');
+                                                        setIsImageModalOpen(false);
+                                                        return;
+                                                    }
+
+                                                    // Handle Change Image from within Refine Modal
+                                                    if (isRefineModalOpen) {
+                                                        setRefineState(prev => ({ ...prev, image: imageState.preview }));
+                                                    }
+                                                    setIsImageModalOpen(false);
+                                                }}
                                                 className="flex-1 flex items-center justify-center gap-2 px-2 py-2 bg-[#A0D296] hover:bg-[#8ec284] text-white rounded-xl font-bold transition-all shadow-sm shadow-[#A0D296]/20 active:scale-95 text-xs"
                                             >
                                                 Apply
@@ -1243,6 +1404,33 @@ const GenerateCreatives = () => {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* 3. Generated Images (New Section) */}
+                                {creativeIdeas && creativeIdeas.length > 0 && (
+                                    <div className="mt-8 pt-6 border-t border-gray-100">
+                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-1">
+                                            Generated Gallery ({creativeIdeas.length})
+                                        </h4>
+                                        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3 mr-2">
+                                            {creativeIdeas.map((creative, index) => (
+                                                <button
+                                                    key={`gen-${index}`}
+                                                    onClick={() => handleBrandAssetSelect(creative.image_url)}
+                                                    className="aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-50 hover:border-[#A0D296] hover:shadow-md transition-all relative group"
+                                                >
+                                                    <img
+                                                        src={creative.image_url}
+                                                        alt={`Generated ${index + 1}`}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                        <div className="bg-[#A0D296] text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">Select</div>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
 
@@ -1252,6 +1440,162 @@ const GenerateCreatives = () => {
                 )
 
             }
+
+            {/* Refine Creative Modal */}
+            {isRefineModalOpen && createPortal(
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[70] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-5xl h-[85vh] flex overflow-hidden border border-gray-100 relative">
+
+                        {/* 1. Left: Image Preview & Selection */}
+                        <div className="w-1/2 bg-gray-50 p-8 flex flex-col border-r border-gray-200 relative">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Original Reference</h3>
+
+                            <div className="flex-1 flex items-center justify-center relative group">
+                                <div className="relative rounded-2xl overflow-hidden shadow-2xl border-4 border-white">
+                                    <img
+                                        src={refineState.image}
+                                        alt="Refine Reference"
+                                        className="max-h-[50vh] object-contain bg-white"
+                                    />
+                                    {/* Hover to change overlay */}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <button
+                                            onClick={() => setIsImageModalOpen(true)}
+                                            className="px-6 py-3 bg-white text-gray-900 rounded-xl font-bold hover:scale-105 transition-transform flex items-center gap-2"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                            Change Image
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="text-center text-xs text-gray-400 mt-6">
+                                Provide this image as a visual visual anchor for the AI.
+                            </p>
+                        </div>
+
+                        {/* 2. Right: Refine Controls */}
+                        <div className="w-1/2 p-10 flex flex-col bg-white">
+                            <div className="flex items-center justify-between mb-8">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-gray-900 leading-tight">Refine Creative</h2>
+                                    <p className="text-gray-500 text-sm mt-1">Iterate on this concept with new instructions</p>
+                                </div>
+                                <button
+                                    onClick={() => setIsRefineModalOpen(false)}
+                                    className="p-2 hover:bg-gray-50 rounded-full text-gray-400 hover:text-gray-900 transition-colors"
+                                >
+                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+
+                            <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2">
+                                {/* Prompt Input */}
+                                <div className="space-y-3">
+                                    <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                        <Sparkles className="w-4 h-4 text-purple-500" />
+                                        What would you like to change?
+                                    </label>
+                                    <textarea
+                                        value={refineState.prompt}
+                                        onChange={(e) => setRefineState({ ...refineState, prompt: e.target.value })}
+                                        placeholder="E.g., Make the background darker, add more vibrant colors, remove the text..."
+                                        className="w-full h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A0D296] focus:border-transparent outline-none resize-none text-gray-900 placeholder-gray-400 text-base"
+                                    />
+                                </div>
+
+                                {/* Add Brand Asset / Upload (Secondary Input) */}
+                                <div className="space-y-3">
+                                    <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                        <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                        Add Brand Asset / Upload
+                                    </label>
+
+                                    {refineState.overlayImage ? (
+                                        <div className="relative group rounded-xl overflow-hidden border border-gray-200 h-24 w-full flex bg-gray-50">
+                                            <img src={refineState.overlayImage} alt="Overlay" className="h-full w-24 object-cover" />
+                                            <div className="flex-1 flex items-center px-4">
+                                                <span className="text-sm text-gray-600 truncate">Asset Selected</span>
+                                            </div>
+                                            <button
+                                                onClick={() => setRefineState({ ...refineState, overlayImage: null })}
+                                                className="absolute top-2 right-2 bg-white text-red-500 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                setSelectionMode('refine-overlay');
+                                                setIsImageModalOpen(true);
+                                                // Temporarily hide Refine Modal? No, it's Z-indexed lower or we assume Image Modal is higher.
+                                                // Image Modal is typically z-[60], Refine is z-[70].
+                                                // We need to lower Refine Modal z-index or raise Image Modal.
+                                                // Current Refine Modal z is [70].
+                                                // Let's rely on Image Modal being on top or momentarily hide refine modal?
+                                                // Actually, if we open Image Modal ON TOP, we need Image Modal to be z-[80].
+                                                // I'll check Image Modal z-index.
+                                                setIsRefineModalOpen(false); // Hide refine modal temporarily to pick image? 
+                                                // Or better: Keep it open but ensure Image Modal is visible.
+                                                // But if I close it, I lose state unless I persist it. State is in component, so it persists if component doesn't unmount.
+                                                // Component GenerateCreatives doesn't unmount.
+                                                // So setIsRefineModalOpen(false) is safe, state `refineState` is preserved.
+                                            }}
+                                            className="w-full h-16 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center gap-2 text-gray-400 hover:text-gray-600 hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-sm"
+                                        >
+                                            <span className="text-2xl">+</span> Add Image / Asset
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Aspect Ratio */}
+                                <div className="space-y-3">
+                                    <label className="text-sm font-bold text-gray-700">Output Aspect Ratio</label>
+                                    <div className="flex gap-2 flex-wrap">
+                                        {['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'].map(ratio => (
+                                            <button
+                                                key={ratio}
+                                                onClick={() => setRefineState({ ...refineState, aspectRatio: ratio })}
+                                                className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${refineState.aspectRatio === ratio
+                                                    ? 'bg-[#A0D296]/10 border-[#A0D296] text-[#6ea362]'
+                                                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                    }`}
+                                            >
+                                                {ratio}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer Actions */}
+                            <div className="pt-6 border-t border-gray-100 flex items-center justify-end gap-3">
+                                <button
+                                    onClick={() => setIsRefineModalOpen(false)}
+                                    className="px-6 py-3 text-gray-500 font-bold hover:bg-gray-50 rounded-xl transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleRefineSubmit}
+                                    disabled={isRefining}
+                                    className={`px-8 py-3 bg-[#A0D296] hover:bg-[#8ec284] text-white font-bold rounded-xl shadow-lg shadow-[#A0D296]/20 flex items-center gap-2 transform active:scale-95 transition-all ${isRefining ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                >
+                                    {isRefining ? (
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                    ) : (
+                                        <Sparkles className="w-5 h-5" />
+                                    )}
+                                    {isRefining ? 'Submitting...' : 'Submit'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* Full Screen Image Preview Modal */}
             {previewImage && createPortal(

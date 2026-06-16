@@ -5,7 +5,7 @@ import logo from '../../assets/pucho_logo_sidebar_new.png';
 import userAvatar from '../../assets/ToyFaces_Tansparent_BG_30.png';
 import { getMascotUrl } from '../../utils/mascots';
 
-import { Dna, Megaphone, Palette, FolderOpen, Activity, Plug, BookOpen, Wrench, Store, LogOut, Users, LineChart, FileText, Mic, Target } from 'lucide-react';
+import { Dna, Megaphone, Palette, FolderOpen, Activity, Plug, BookOpen, Wrench, Store, LogOut, Users, LineChart, FileText, Mic, Target, Image, History } from 'lucide-react';
 import { useBrands } from '../../context/BrandContext';
 
 const Sidebar = ({ isMobileOpen }) => {
@@ -29,6 +29,8 @@ const Sidebar = ({ isMobileOpen }) => {
         { name: 'Competitor Analysis', icon: Target, path: '/admin/competitor-analysis' },
         { name: 'MOM Summary', icon: BookOpen, path: '/admin/mom-summary' },
         { name: 'Generate Creatives', icon: Palette, path: '/admin/chat' },
+        { name: 'Smart Image Resizzer', icon: Image, path: '/admin/smart-image-resizzer' },
+        { name: 'My History', icon: History, path: '/admin/my-history' },
         { name: 'User Management', icon: Users, path: '/admin/users', adminOnly: true },
         { name: 'Activity Logs', icon: Activity, path: '/admin/activity-logs', adminOnly: true },
         {

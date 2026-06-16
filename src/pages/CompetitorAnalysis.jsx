@@ -1,18 +1,70 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Target, Plus, X, Loader2, Building2, Globe, FileText, ExternalLink } from 'lucide-react';
+import { Target, Plus, X, Loader2, Building2, Globe, FileText, ExternalLink, Mail } from 'lucide-react';
 import { fetchCompetitorAnalysisReports } from '../services/googleSheetsService';
 
 const CompetitorAnalysis = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [companyName, setCompanyName] = useState('');
     const [websiteUrl, setWebsiteUrl] = useState('');
+    const [emailId, setEmailId] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Data State
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [previewModal, setPreviewModal] = useState({ isOpen: false, title: '', content: '' });
+
+    const [isPolling, setIsPolling] = useState(false);
+    const [pollingTarget, setPollingTarget] = useState('');
+    const [statusMessage, setStatusMessage] = useState('Analyzing website...');
+
+    // Status message rotation
+    useEffect(() => {
+        if (!isPolling) return;
+
+        const messages = [
+            "Analyzing website...",
+            "Gathering competitor insights...",
+            "Comparing market position...",
+            "Identifying generic descriptors...",
+            "Generating HTML report..."
+        ];
+
+        let msgIndex = 0;
+        const msgInterval = setInterval(() => {
+            msgIndex = (msgIndex + 1) % messages.length;
+            setStatusMessage(messages[msgIndex]);
+        }, 3000);
+
+        return () => clearInterval(msgInterval);
+    }, [isPolling]);
+
+    // Polling logic
+    useEffect(() => {
+        if (!isPolling || !pollingTarget) return;
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const data = await fetchCompetitorAnalysisReports();
+                // Check if our company exists in the new data
+                // We use a flexible check since the stored name might vary slightly, but exact match is best for now
+                const found = data.find(item =>
+                    item.companyName.toLowerCase().trim() === pollingTarget.toLowerCase().trim()
+                );
+
+                if (found) {
+                    setReports(data);
+                    setIsPolling(false);
+                    setPollingTarget('');
+                }
+            } catch (error) {
+                console.error("Polling error:", error);
+            }
+        }, 2000);
+
+        return () => clearInterval(pollInterval);
+    }, [isPolling, pollingTarget]);
 
     useEffect(() => {
         loadReports();
@@ -45,6 +97,7 @@ const CompetitorAnalysis = () => {
         const formData = new FormData();
         formData.append('companyName', companyName);
         formData.append('websiteUrl', websiteUrl);
+        formData.append('emailId', emailId);
 
         try {
             const response = await fetch('https://studio.pucho.ai/api/v1/webhooks/KUJqv8QGxlBsbjkDZrPoz', {
@@ -53,11 +106,16 @@ const CompetitorAnalysis = () => {
             });
 
             if (response.ok) {
-                alert("Competitor analysis request sent successfully!");
+                // Modified: Start polling instead of alert
                 setIsModalOpen(false);
                 setCompanyName('');
                 setWebsiteUrl('');
-                // Optionally reload reports after submission if it was instant, but likely strictly async
+                setEmailId('');
+
+                // Start polling
+                setPollingTarget(companyName);
+                setIsPolling(true);
+                setStatusMessage("Analyzing website...");
             } else {
                 alert("Failed to send request. Please try again.");
                 console.error("Webhook error:", await response.text());
@@ -77,13 +135,27 @@ const CompetitorAnalysis = () => {
                 {/* Header Action */}
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-2xl font-bold text-gray-900">Competitor Analysis Reports</h1>
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-[#6366f1] rounded-xl hover:bg-[#5558dd] transition-all shadow-md hover:shadow-lg ring-offset-2 focus:ring-2 ring-indigo-500"
-                    >
-                        <Plus className="w-5 h-5 mr-1.5" />
-                        New Analysis
-                    </button>
+
+                    <div className="flex items-center gap-4">
+                        {/* Polling Indicator */}
+                        {isPolling && (
+                            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-indigo-100 animate-in fade-in slide-in-from-top-4 duration-500">
+                                <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                                <span className="text-sm font-medium text-indigo-900 min-w-[200px]">
+                                    {statusMessage}
+                                </span>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            disabled={isPolling}
+                            className="inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white bg-[#6366f1] rounded-xl hover:bg-[#5558dd] transition-all shadow-md hover:shadow-lg ring-offset-2 focus:ring-2 ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Plus className="w-5 h-5 mr-1.5" />
+                            New Analysis
+                        </button>
+                    </div>
                 </div>
 
                 {loading ? (
@@ -149,7 +221,7 @@ const CompetitorAnalysis = () => {
 
             {/* Modal for New Analysis */}
             {isModalOpen && createPortal(
-                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
                             <h3 className="text-lg font-bold text-gray-900">Competitor Analysis Agent</h3>
@@ -200,6 +272,24 @@ const CompetitorAnalysis = () => {
                                 </div>
                             </div>
 
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    Email ID to send report
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                        <Mail className="w-5 h-5" />
+                                    </div>
+                                    <input
+                                        type="email"
+                                        value={emailId}
+                                        onChange={(e) => setEmailId(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-[#6366f1] focus:border-[#6366f1] outline-none transition-all placeholder:text-gray-400"
+                                        placeholder="e.g. your@email.com"
+                                    />
+                                </div>
+                            </div>
+
                             <div className="pt-2">
                                 <button
                                     type="submit"
@@ -228,7 +318,7 @@ const CompetitorAnalysis = () => {
 
             {/* Preview Modal */}
             {previewModal.isOpen && createPortal(
-                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
                             <h3 className="text-lg font-bold text-gray-900">{previewModal.title}</h3>

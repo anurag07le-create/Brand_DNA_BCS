@@ -17,6 +17,8 @@ import CompetitorAnalysis from "./pages/CompetitorAnalysis";
 import UserManagement from "./pages/admin/UserManagement";
 import ActivityLogs from "./pages/admin/ActivityLogs";
 import MomSummary from "./pages/MomSummary";
+import SmartImageResizzer from "./pages/SmartImageResizzer";
+import MyHistory from "./pages/MyHistory";
 
 // GUARD: Protects routes from unauthenticated users
 const ProtectedRoute = ({ children }) => {
@@ -69,6 +71,8 @@ function App() {
                             <Route path="flow" element={<CardsGrid />} />
                             <Route path="competitor-analysis" element={<CompetitorAnalysis />} />
                             <Route path="mom-summary" element={<MomSummary />} />
+                            <Route path="smart-image-resizzer" element={<SmartImageResizzer />} />
+                            <Route path="my-history" element={<MyHistory />} />
 
                             <Route path="activity-logs" element={<ActivityLogs />} />
                             <Route path="mcp" element={<DummyPage title="MCP Controls" />} />

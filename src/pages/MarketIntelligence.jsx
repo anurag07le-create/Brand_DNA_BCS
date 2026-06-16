@@ -1,10 +1,47 @@
 import React, { useState } from 'react';
-import { Send, Sparkles } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Send, Sparkles, CheckCircle, X } from 'lucide-react';
+
+// Reusable Label Component
+const Label = ({ children }) => (
+    <label className="block text-sm font-semibold text-gray-900 mb-2">
+        {children}
+    </label>
+);
+
+// Reusable Input Component
+const Input = ({ name, placeholder, value, onChange }) => (
+    <input
+        type="text"
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all duration-200 text-gray-900 placeholder:text-gray-400"
+    />
+);
+
+// Reusable Textarea Component
+const Textarea = ({ name, placeholder, value, onChange, rows = 3, helpText }) => (
+    <div className="space-y-2">
+        <textarea
+            name={name}
+            value={value}
+            onChange={onChange}
+            rows={rows}
+            placeholder={placeholder}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all duration-200 text-gray-900 placeholder:text-gray-400 resize-none"
+        />
+        {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
+    </div>
+);
 
 const MarketIntelligence = () => {
     const [loading, setLoading] = useState(false);
+    const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [formData, setFormData] = useState({
         clientName: '',
+        emailId: '',
         brandProduct: '',
         problemStatement: '',
         targetConsumer: '',
@@ -58,7 +95,8 @@ const MarketIntelligence = () => {
 
             if (response.ok) {
                 console.log('Webhook success:', payload);
-                alert('Report generation started successfully!');
+                setShowSuccessPopup(true);
+                // clean form optional, user didn't ask but usually good UX. Keeping it as is to just show popup.
             } else {
                 console.error('Webhook failed:', response.statusText);
                 alert('Failed to start report generation. Please try again.');
@@ -71,42 +109,46 @@ const MarketIntelligence = () => {
         }
     };
 
-    // Reusable Label Component
-    const Label = ({ children }) => (
-        <label className="block text-sm font-semibold text-gray-900 mb-2">
-            {children}
-        </label>
-    );
-
-    // Reusable Input Component
-    const Input = ({ name, placeholder, value, onChange }) => (
-        <input
-            type="text"
-            name={name}
-            value={value}
-            onChange={onChange}
-            placeholder={placeholder}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all duration-200 text-gray-900 placeholder:text-gray-400"
-        />
-    );
-
-    // Reusable Textarea Component
-    const Textarea = ({ name, placeholder, value, onChange, rows = 3, helpText }) => (
-        <div className="space-y-2">
-            <textarea
-                name={name}
-                value={value}
-                onChange={onChange}
-                rows={rows}
-                placeholder={placeholder}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-black focus:ring-1 focus:ring-black outline-none transition-all duration-200 text-gray-900 placeholder:text-gray-400 resize-none"
-            />
-            {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
-        </div>
-    );
+    // Components moved outside to prevent re-renders losing focus
 
     return (
-        <div className="min-h-screen bg-[#fafafa] py-6 px-4 sm:px-6">
+        <div className="min-h-screen bg-[#fafafa] py-6 px-4 sm:px-6 relative">
+            {/* Success Popup */}
+            {showSuccessPopup && createPortal(
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative animate-in zoom-in-95 duration-200">
+                        <button
+                            onClick={() => setShowSuccessPopup(false)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-4">
+                                <CheckCircle className="w-8 h-8 text-green-500" />
+                            </div>
+
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                Report Generation Started!
+                            </h3>
+
+                            <p className="text-gray-600 mb-6">
+                                The report will be ready in <span className="font-semibold text-gray-900">10 mins</span> and will be shown in the <span className="font-semibold text-gray-900">Market Intelligence Report</span> page.
+                            </p>
+
+                            <button
+                                onClick={() => setShowSuccessPopup(false)}
+                                className="w-full py-3 bg-black hover:bg-gray-800 text-white rounded-xl font-semibold transition-colors"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
             <div className="max-w-4xl mx-auto space-y-8">
 
                 {/* Header Removed - Moved to Global Header */}
@@ -194,6 +236,19 @@ const MarketIntelligence = () => {
                                 <div className="md:col-span-2">
                                     <Label>Other Key Information</Label>
                                     <Textarea name="otherInfo" value={formData.otherInfo} onChange={handleChange} placeholder="Any other relevant details..." rows={3} />
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Delivery Section */}
+                        <section className="space-y-6">
+                            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2 pb-2 border-b border-gray-100">
+                                4. Delivery
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <Label>Email ID to send report</Label>
+                                    <Input type="email" name="emailId" value={formData.emailId} onChange={handleChange} placeholder="e.g. hello@example.com" />
                                 </div>
                             </div>
                         </section>

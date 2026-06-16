@@ -22,6 +22,8 @@ const Header = ({ onMenuClick, searchQuery, setSearchQuery }) => {
         '/admin/market-intelligence': { title: 'Market Intelligence', description: 'Strategic insights & comprehensive brief generation' },
         '/admin/market-intelligence-reports': { title: 'Market Intelligence Reports', description: 'View and manage generated strategy reports' },
         '/admin/audio-transcription': { title: 'Audio Transcription Summary', description: 'Transcribe and summarize audio files' },
+        '/admin/smart-image-resizzer': { title: 'Smart Image Resizer', description: 'Resize images to multiple aspect ratios' },
+        '/admin/my-history': { title: 'My History', description: 'View all your resized images' },
     };
 
     const currentPath = location.pathname;
@@ -53,7 +55,7 @@ const Header = ({ onMenuClick, searchQuery, setSearchQuery }) => {
             <div className="flex items-center gap-4">
                 {/* Search Bar (Restored) - Hidden on Campaign Ideas, Generate Creatives, and Brand Detail pages */}
                 {/* Note: User requested Search Bar on Generate Brand DNA (/admin) page */}
-                {!['/admin/agents', '/admin/chat'].includes(currentPath) && !currentPath.startsWith('/admin/dna/') && (
+                {!['/admin/agents', '/admin/chat', '/admin/smart-image-resizzer', '/admin/my-history'].includes(currentPath) && !currentPath.startsWith('/admin/dna/') && (
                     <div
                         className={`
                             hidden md:flex items-center gap-2.5 bg-white rounded-full transition-all duration-200 ease-in-out
